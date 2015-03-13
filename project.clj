@@ -4,11 +4,11 @@
   :url "http://zentrope.com"
 
   :license
-  {:name "Eclipse Public License"
-   :url "http://www.eclipse.org/legal/epl-v10.html"}
+  {:name "EPL" :url "http://bit.ly/1EXoLjp"}
 
   :dependencies
   [[org.clojure/clojure "1.7.0-alpha5"]
+   [org.clojure/core.async "0.1.346.0-17112a-alpha"]
    [aleph "0.4.0-beta3"]
    [clout "2.1.0"]]
 
