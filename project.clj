@@ -12,6 +12,10 @@
    [aleph "0.4.0-beta3"]
    [clout "2.1.0"]]
 
+  :plugins
+  [[lein-ancient "0.6.5" :exclusions [org.clojure/clojure]]
+   [cider/cider-nrepl "0.8.2"]]
+
   :source-paths ["src/clj"]
 
   :main ^:skip-aot pong.main

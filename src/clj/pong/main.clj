@@ -1,92 +1,93 @@
 (ns pong.main
   (:require
    [aleph.http :as http]
-   [manifold.stream :as s]
-   [clout.core :as clout]
+   [clojure.core.async :refer [go]]
+   [clojure.java.io :as io]
    [clojure.pprint :refer [pprint]]
-   [clojure.core.async :refer [go-loop]])
+   [clout.core :as clout]
+   [manifold.stream :as s])
   (:gen-class))
 
-;;-----
+;;-----------------------------------------------------------------------------
+;; Utilities
+;;-----------------------------------------------------------------------------
 
-(defn response
-  ([]
-   {:status 200})
-  ([body]
-   {:status 200 :body ""}))
+(defn mime-for
+  [file]
+  (let [path (.getPath file)]
+    (cond
+      (.endsWith path "css") "text/css"
+      (.endsWith path "html") "text/html"
+      (.endsWith path "js") "application/javascript"
+      :else "text/plain")))
 
-(defn header
-  [response k v]
-  (assoc-in response [:headers k] v))
-
-(defn content
-  [response type]
-  (header response "content-type" type))
-
-(defn status
-  [response status]
-  (assoc response :status status))
-
-;;-----
-
-(defn ping
-  [req]
-  (println "- ping")
-  (pprint req)
-  (-> (response)
-      (content "text/plain")
-      (assoc :body "pong")))
+;;-----------------------------------------------------------------------------
+;; Chat
+;;-----------------------------------------------------------------------------
 
 ;; The idea (eventually) is to have controllers log in to a certain
 ;; chat room so that the app can serve lots of simultaneous
 ;; games. When you bring up the game, it should present a code. Use
-;; the code in the player to attach to the correct game.
+;; the code in the controller to attach to the correct game.
+
+(defn chat-loop!
+  [req]
+  (let [stream @(http/websocket-connection req)]
+    (go (loop []
+          (when-let [message @(s/take! stream)]
+            (println " recv:" message)
+            (recur)))
+        (println "- chat terminated"))))
+
+;;-----------------------------------------------------------------------------
+;; Handlers
+;;-----------------------------------------------------------------------------
+
+(defn game-board
+  [req]
+  {:status 200
+   :headers {"content-type" "text/html"}
+   :body (slurp (io/resource "www/index.html"))})
+
+(defn game-controller
+  [player req]
+  (let [doc (format "www/p%s.html" player)]
+    {:status 200
+     :headers {"content-type" "text/html"}
+     :body (slurp (io/resource doc))}))
 
 (defn chat
   [req]
   (println "- chat")
-  (let [stream @(http/websocket-connection req)]
-    (go-loop []
-      (when-let [message @(s/take! stream)]
-        (println " recv:" message)
-        (recur)))))
+  (chat-loop! req))
 
 (defn not-found
   [_]
-  (-> (response)
-      (status 404)))
+  {:status 404
+   :headers {"content-type" "text/plain"}
+   :body "Not found"})
 
-;;-----
+(defn resources
+  [req]
+  (let [doc (io/file (io/resource (str "www/" (:uri req))))]
+    (if (and doc (.exists doc))
+      {:status 200
+       :headers {"content-type" (mime-for doc)}
+       :body (slurp doc)}
+      (not-found req))))
 
-(defn mid
-  [h]
-  (fn [request]
-    (h (assoc request :keith "irwin"))))
-
-(defn real
-  [h]
-  (fn [{:keys [body] :as request}]
-    (h (if-not (nil? body)
-         (assoc request :body (if (string? body) body (slurp body)))
-         request))))
+;;-----------------------------------------------------------------------------
+;; Routing
+;;-----------------------------------------------------------------------------
 
 (def routes
-  ;;
-  ;; Declarative routing.
-  ;;
-  [{:route "/ping"
-    :method :get
-    :middleware (comp mid real)
-    :handler ping}
-   {:route "/ws"
-    :method :get
-    :handler chat}])
-
-;;-----
+  [{:route "/"   :method :get :handler game-board}
+   {:route "/p1" :method :get :handler (partial game-controller 1)}
+   {:route "/p2" :method :get :handler (partial game-controller 2)}
+   {:route "/ws" :method :get :handler chat}])
 
 (defn dispatch
   [routes req]
-  ;; Reduce might work better. Return a list of [params route-def].
   (loop [routes (filter #(= (:request-method req) (:method %)) routes)]
     (if-let [{:keys [route handler middleware]} (first routes)]
       (if (clout/route-matches route req)
@@ -94,9 +95,11 @@
           ((middleware handler) req)
           (handler req))
         (recur (rest routes)))
-      (not-found req))))
+      (resources req))))
 
-;;-----
+;;-----------------------------------------------------------------------------
+;; System
+;;-----------------------------------------------------------------------------
 
 (defn- hook-shutdown!
   [f]
