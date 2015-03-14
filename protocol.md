@@ -2,53 +2,97 @@
 
 > Working out the ideas. This isn't implemented.
 
-
-## TODO
-
-* Work out how to restart a game once it's finished. Should players
-  just have to re-enter a new room code?
-
 ## Game
 
-When the game-board is rendered in the browser, it sends the
-following:
+### Game is loaded ###
 
-    send: {:tag :join, :id :game}
+When the `game` is rendered in the browser and the web-socket
+connection is established, the `game` sends the following message:
 
-It has to do this to tell the server that it's a `game` rather than a
-`controller`.
+    send: {:event :join, :id :game}
 
-It should do nothing with any subsequent messages until it sees:
+This will trigger the server to establish a new `game` session.
 
-    recv: {:tag :room, :id :game, :room "1234"}
 
-It should then display the room number on the screen with a message
-indicating that controllers need to type the sequence in to properly
-join.
+### Game registers a session ###
 
-Eventually, the controllers will join up which the `game` will see as
-following:
+It should do nothing with any subsequent messages until it receives
+the following message:
 
-    recv: {:tag :join, :id :player1, :room "1234"}
-    recv: {:tag :join, :id :player2, :room "1234"}
+    recv: {:event :session, :id :game, :session "1234"}
 
-Once both are in place, it'll send:
+The `game` should then display the session number on the screen with a
+message indicating that `controllers` need to type the sequence in to
+properly join.
 
-    send: {:tag :gamestart, :id :game, :room "1234"}
 
-and then flip to the appropriate `playing` state. It'll start
-receiving telmetry something like:
+### Controllers join the game session ###
 
-    recv: {:tag :telemetry, :id :player1, :room "1234", :y 54}
-    recv: {:tag :telemetry, :id :player1, :room "1234", :y 55}
+Eventually, the `controllers` will associate themselves with the
+`game's` session. The `game` will see this as start or join messages:
+
+    recv: {:event :join, :id :player1, :session "1234"}
+    recv: {:event :join, :id :player2, :session "1234"}
+
+or
+
+    recv: {:event :restart, :id :player1, :session "1234"}
+    recv: {:event :restart, :id :player2, :session "1234"}
+
+A "join" event indicates that the `controller` has connected to the
+session for the first time. A "restart" event indicates that the
+`controller` is ready for a new game.
+
+### Starting the game
+
+Once the `game` has registered that two players are participating in
+the game session, it shold send the following event:
+
+    send: {:event :gamestart, :id :game, :session "1234"}
+
+and then flip to the appropriate `playing` state.
+
+### Receiving game events
+
+As users interact with the `controls`, the `game` will start receiving
+telemetry events similar to:
+
+    recv: {:event :telemetry, :id :player1, :session "1234", :y 54}
+    recv: {:event :telemetry, :id :player1, :session "1234", :y 55}
 
 which it'll use to move paddled up and down on the screen.
 
-Once the game is complete, the `game` should send:
+### Ending the game
 
-    send {:tag :gameover, :id :game, :room "1234"}
+Once the game is complete, the `game` should publish a game-over
+event:
 
-and then reset itself back to the "start over" screen.
+    send {:event :gameover, :id :game, :session "1234"}
+
+Presumably the `game` should be back to the state where it's waiting
+for controllers to register their inclination to start a new game.
+
+### Controller disconnects
+
+If a controller is disconnected from `game` session, the server will
+send the following message:
+
+    recv: {:event :disconnect, :id :player1}
+
+The game can decide to pause until there's a `:join` or `:restart`
+event, or just tank the whole game and start over.
+
+### Server goes down
+
+This is detectable when the socket connection is broken. By its very
+nature, there is no incoming messages.
+
+### Server comes back up
+
+When the connection to the server is resumed, follow the same
+processes as when the game is first loaded. If there was a game in
+progress, it's lost.
+
 
 ## Controller
 
