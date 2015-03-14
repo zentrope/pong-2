@@ -4,7 +4,7 @@
 
 ## Game
 
-### Game is loaded ###
+### Game loads
 
 When the `game` is rendered in the browser and the web-socket
 connection is established, the `game` sends the following message:
@@ -14,7 +14,7 @@ connection is established, the `game` sends the following message:
 This will trigger the server to establish a new `game` session.
 
 
-### Game registers a session ###
+### Game registers a session
 
 It should do nothing with any subsequent messages until it receives
 the following message:
@@ -43,7 +43,7 @@ A "join" event indicates that the `controller` has connected to the
 session for the first time. A "restart" event indicates that the
 `controller` is ready for a new game.
 
-### Starting the game
+### Game starts
 
 Once the `game` has registered that two players are participating in
 the game session, it shold send the following event:
@@ -52,7 +52,7 @@ the game session, it shold send the following event:
 
 and then flip to the appropriate `playing` state.
 
-### Receiving game events
+### Game receives controller events
 
 As users interact with the `controls`, the `game` will start receiving
 telemetry events similar to:
@@ -62,7 +62,7 @@ telemetry events similar to:
 
 which it'll use to move paddled up and down on the screen.
 
-### Ending the game
+### Game ends
 
 Once the game is complete, the `game` should publish a game-over
 event:
@@ -98,35 +98,35 @@ progress, it's lost.
 
 After the user types in the 4 digit code, send a join msg:
 
-    send: {:tag :join, :id :player1, :room "1234"}
+    send: {:event :join, :id :player1, :session "1234"}
 
 Display a "joining" screen until receiving a game start message:
 
-    recv: {:tag :gamestart, :id :game, :room "1234"}
+    recv: {:event :gamestart, :id :game, :session "1234"}
 
 Display the controls and start sending telemetry:
 
-    send: {:tag :telemetry, :id :player1, :room "1234", :y 54}
-    send: {:tag :telemetry, :id :player1, :room "1234", :y 55}
+    send: {:event :telemetry, :id :player1, :session "1234", :y 54}
+    send: {:event :telemetry, :id :player1, :session "1234", :y 55}
 
 For pong, all we need is the `y` position, so that's all that gets
-sent (aside from `tag` `id` and `room`). For other games, add
+sent (aside from `evet` `id` and `session`). For other games, add
 additional keys.
 
 The game is over when the controller receives:
 
-    recv: {:tag :gameover, :id :game, :room "1234"}
+    recv: {:event :gameover, :id :game, :session "1234"}
 
 At this point, the controller should present a "play again?"
 button. If clicked, it sends something like:
 
-    send: {:tag :restart, :id :player1, :room "1234"}
+    send: {:event :restart, :id :player1, :session "1234"}
 
 (Or should that be join?)
 
 If the controller receives the following:
 
-    recv: {:tag :disconnect, :id :server}
+    recv: {:event :disconnect, :id :server}
 
 it should go back to waiting for the player to enter a code.
 
@@ -134,17 +134,17 @@ it should go back to waiting for the player to enter a code.
 
 **Notes**
 
-Store connection state as a hashmap. Keys are the rooms, and values
-are a list of connected clients.
+Store connection state as a hashmap? Let's say keys are the
+session-ids, and values are a list of connected clients.
 
     {"1234" {:player1 #<stream>,
              :player1 #<stream>,
              :game #<stream>}}
 
-* All connections in a room receive all messages sent by other
-  clients. For instance, if `:player1` sends telemetry, `:player2` will
-  get the data. Does this make thing simpler on the server? Does it
-  make for easier debugging at all points?
+* All connections in a session receive all messages sent by other
+  clients. For instance, if `:player1` sends telemetry, `:player2`
+  will get the data. Does this make thing simpler on the server? Does
+  it make for easier debugging at all points?
 
 * Clients will ignore messages unless they're from the server or the
   game, I guess.
@@ -152,10 +152,9 @@ are a list of connected clients.
 * The server never initiates a message except when one of the clients
   disappears.
 
-* When a client leaves a room, all remaining connections are sent a
-  disconnect message.
+* When a client leaves a session, all remaining connections are sent a
+  disconnect message. (Or, no: clients decide if they ought to leave
+  because they get the disconnect message.)
 
-* When clients first connect, they're placed in the "lobby" until the
-  join the right room.
-
-* Should the server kick game-over rooms back to the lobby?
+* When clients first connect, they're placed in the "lobby" until they
+  join a game session.
