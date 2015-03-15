@@ -4,13 +4,19 @@
    [clojure.core.async :refer [go]]
    [clojure.java.io :as io]
    [clojure.pprint :refer [pprint]]
+   [clojure.edn :as edn]
+   [clojure.string :as s]
    [clout.core :as clout]
-   [manifold.stream :as s])
+   [manifold.stream :as stream])
   (:gen-class))
 
 ;;-----------------------------------------------------------------------------
 ;; Utilities
 ;;-----------------------------------------------------------------------------
+
+(defn uuid
+  []
+  (-> (gensym) str (s/replace "__" "") s/lower-case))
 
 (defn mime-for
   [file]
@@ -25,18 +31,74 @@
 ;; Chat
 ;;-----------------------------------------------------------------------------
 
-;; The idea (eventually) is to have controllers log in to a certain
-;; chat room so that the app can serve lots of simultaneous
-;; games. When you bring up the game, it should present a code. Use
-;; the code in the controller to attach to the correct game.
+(defonce state (atom {}))
+
+(add-watch state :debug
+           (fn [_ _ old new]
+             (println "--")
+             (pprint new)
+             (println "--")))
+
+;;-----------------------------------------------------------------------------
+
+(defn create-session!
+  [state session-id role-id stream]
+  (swap! state assoc session-id {role-id stream}))
+
+(defn in-session?
+  [state session-id]
+  (not (nil? (get @state session-id))))
+
+(defn move-session!
+  [state from-session to-session client-key]
+  ;; placeholder
+  )
+
+(defn close-session!
+  [state session-id]
+  (when-let [session (get @state session-id)]
+    (swap! state dissoc session-id)
+    (doseq [stream (vals session)]
+      (.close stream))))
+
+;;-----------------------------------------------------------------------------
+
+(defmulti do-event!
+  (fn [session-id stream event]
+    (:event event)))
+
+(defmethod do-event! :default
+  [session-id stream event]
+  (println "chat> [unhandled-event]" (pr-str event)))
+
+(defmethod do-event! :session
+  [session-id stream event]
+  (let [new-event (assoc event :session session-id)]
+    (if @(stream/put! stream (pr-str new-event))
+      (println "send:" new-event)
+      (println "send: [fail]" new-event))))
+
+;;-----------------------------------------------------------------------------
 
 (defn chat-loop!
   [req]
-  (let [stream @(http/websocket-connection req)]
+  (let [stream @(http/websocket-connection req)
+        session-id (uuid)]
     (go (loop []
-          (when-let [message @(s/take! stream)]
-            (println " recv:" message)
+          (when-let [event (edn/read-string @(stream/take! stream))]
+            (try
+
+              (when-not (in-session? state session-id)
+                (create-session! state session-id (:id event) stream))
+
+              (do-event! session-id stream event)
+
+              (catch Throwable t
+                (do-event! session-id
+                           stream
+                           {:event :exception :msg event :exception t})))
             (recur)))
+        (close-session! state session-id)
         (println "- chat terminated"))))
 
 ;;-----------------------------------------------------------------------------

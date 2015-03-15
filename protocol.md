@@ -9,7 +9,7 @@
 When the `game` is rendered in the browser and the web-socket
 connection is established, the `game` sends the following message:
 
-    send: {:event :join, :id :game}
+    send: {:event :session, :id :game}
 
 This will trigger the server to establish a new `game` session.
 
