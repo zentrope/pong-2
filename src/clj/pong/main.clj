@@ -31,49 +31,62 @@
 ;; Chat
 ;;-----------------------------------------------------------------------------
 
-(defonce state (atom {}))
+(defonce state
+  (atom {}))
 
 (add-watch state :debug
-           (fn [_ _ old new]
-             (println "--")
-             (pprint new)
-             (println "--")))
+           (fn [_ _ _ new]
+             (pprint {:state (reduce (fn [a [k v]]
+                                       (assoc a (str k) v)) {} new)})))
 
 ;;-----------------------------------------------------------------------------
 
-(defn create-session!
-  [state session-id role-id stream]
-  (swap! state assoc session-id {role-id stream}))
+(defn ensure-session!
+  [state stream sid]
+  (when-not (or (nil? sid)
+                (= (get @state stream) sid))
+    (swap! state #(-> (dissoc % stream)
+                      (assoc stream sid)))))
 
-(defn in-session?
-  [state session-id]
-  (not (nil? (get @state session-id))))
+(defn participants
+  [state session]
+  (->> @state
+       (filterv (fn [[s sid]] (= session sid)))
+       keys))
 
-(defn move-session!
-  [state from-session to-session client-key]
-  ;; placeholder
-  )
+(defn publish!
+  [state origin event]
+  (doseq [p (participants state (:session event))]
+    (when-not (= p origin)
+      @(stream/put! p (pr-str event)))))
 
-(defn close-session!
-  [state session-id]
-  (when-let [session (get @state session-id)]
-    (swap! state dissoc session-id)
-    (doseq [stream (vals session)]
-      (.close stream))))
+(defn disconnect!
+  [state stream]
+  (swap! state dissoc stream)
+  (.close stream))
 
 ;;-----------------------------------------------------------------------------
 
-(defmulti do-event!
-  (fn [session-id stream event]
+(defmulti dispatch-event!
+  (fn [state stream event]
     (:event event)))
 
-(defmethod do-event! :default
-  [session-id stream event]
+(defmethod dispatch-event! :default
+  [state stream event]
   (println "chat> [unhandled-event]" (pr-str event)))
 
-(defmethod do-event! :session
-  [session-id stream event]
-  (let [new-event (assoc event :session session-id)]
+(defmethod dispatch-event! :join
+  [state stream event]
+  (publish! state stream event))
+
+(defmethod dispatch-event! :telemetry
+  [state stream event]
+  (publish! state stream event))
+
+(defmethod dispatch-event! :session
+  [state stream event]
+  (let [sid (uuid)
+        new-event (assoc event :session sid)]
     (if @(stream/put! stream (pr-str new-event))
       (println "send:" new-event)
       (println "send: [fail]" new-event))))
@@ -82,23 +95,18 @@
 
 (defn chat-loop!
   [req]
-  (let [stream @(http/websocket-connection req)
-        session-id (uuid)]
+  (let [stream @(http/websocket-connection req)]
     (go (loop []
           (when-let [event (edn/read-string @(stream/take! stream))]
             (try
-
-              (when-not (in-session? state session-id)
-                (create-session! state session-id (:id event) stream))
-
-              (do-event! session-id stream event)
-
+              (ensure-session! state stream (:session event))
+              (dispatch-event! state stream event)
               (catch Throwable t
-                (do-event! session-id
-                           stream
-                           {:event :exception :msg event :exception t})))
+                (dispatch-event! stream {:event :exception
+                                         :msg event
+                                         :exception t})))
             (recur)))
-        (close-session! state session-id)
+        (disconnect! state stream)
         (println "- chat terminated"))))
 
 ;;-----------------------------------------------------------------------------
