@@ -5,7 +5,6 @@
    [clojure.core.async :refer [go timeout <!]]
    [clojure.edn :as edn]))
 
-
 (def lock (promise))
 
 (defprotocol LifeCycle

@@ -87,6 +87,7 @@
   [state stream event]
   (let [sid (uuid)
         new-event (assoc event :session sid)]
+    (ensure-session! state stream sid)
     (if @(stream/put! stream (pr-str new-event))
       (println "send:" new-event)
       (println "send: [fail]" new-event))))
