@@ -7,14 +7,43 @@
 
 (def lock (promise))
 
+;;-----------------------------------------------------------------------------
+
+(defmulti dispatch!
+  (fn [client event] (:event event)))
+
+(defmethod dispatch! :default
+  [{:keys [player session] :as client} event]
+  (println "recv:[" player "] ??? -> " (pr-str event)))
+
+(defmethod dispatch! :session
+  [{:keys [player session] :as client} event]
+  (reset! session (:session event))
+  (println "stat:[" player "] ~ set session to: " @session))
+
+(defmethod dispatch! :join
+  [_ _]
+  ;; squelch
+  )
+
+(defmethod dispatch! :telemetry
+  [_ _]
+  ;; squelch
+  )
+
+;;-----------------------------------------------------------------------------
+
 (defn recv-loop!
   [{:keys [stream session player] :as client}]
   (go (loop []
         (when-let [msg (edn/read-string @(s/take! @stream))]
           (println "recv:[" player "]" (pr-str msg))
+          (dispatch! client msg)
           (recur)))
       (println "stat:[" player "] terminating recv listener")
       (deliver lock :release)))
+
+;;-----------------------------------------------------------------------------
 
 (defn start!
   [{:keys [stream session player] :as client}]
