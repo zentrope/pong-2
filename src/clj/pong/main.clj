@@ -34,24 +34,25 @@
 (defonce state
   (atom {}))
 
-(add-watch state :debug
-           (fn [_ _ _ new]
-             (pprint {:state (reduce (fn [a [k v]]
-                                       (assoc a (str k) v)) {} new)})))
+;; debug only
+#_(add-watch state :debug
+             (fn [_ _ _ new]
+               (pprint {:state (reduce (fn [a [k v]]
+                                         (assoc a (str k) v)) {} new)})))
 
 ;;-----------------------------------------------------------------------------
 
 (defn ensure-session!
-  [state stream sid]
+  [state stream sid pid]
   (when-not (or (nil? sid)
                 (= (get @state stream) sid))
     (swap! state #(-> (dissoc % stream)
-                      (assoc stream sid)))))
+                      (assoc stream {:sid sid :pid pid})))))
 
 (defn participants
   [state session]
   (->> @state
-       (filterv (fn [[s sid]] (= session sid)))
+       (filterv (fn [[s m]] (= session (:sid m))))
        keys))
 
 (defn publish!
@@ -59,6 +60,14 @@
   (doseq [p (participants state (:session event))]
     (when-not (= p origin)
       @(stream/put! p (pr-str event)))))
+
+(defn session-for
+  [state stream]
+  (:sid (get @state stream)))
+
+(defn id-for
+  [state stream]
+  (:pid (get @state stream)))
 
 (defn disconnect!
   [state stream]
@@ -73,42 +82,55 @@
 
 (defmethod dispatch-event! :default
   [state stream event]
-  (println "chat> [unhandled-event]" (pr-str event)))
+  ;; By default, publish.
+  (publish! state stream event))
 
 (defmethod dispatch-event! :join
   [state stream event]
-  (publish! state stream event))
-
-(defmethod dispatch-event! :telemetry
-  [state stream event]
-  (publish! state stream event))
+  (publish! state stream event)
+  (println "- chat" (pr-str event)))
 
 (defmethod dispatch-event! :session
   [state stream event]
   (let [sid (uuid)
         new-event (assoc event :session sid)]
-    (ensure-session! state stream sid)
+    (ensure-session! state stream sid (:id event))
     (if @(stream/put! stream (pr-str new-event))
-      (println "send:" new-event)
-      (println "send: [fail]" new-event))))
+      (println "- chat" (pr-str new-event))
+      (println "- chat [fail]" (pr-str new-event)))))
 
 ;;-----------------------------------------------------------------------------
+
+(defn chat-invoke!
+  [state stream event]
+  (try
+    (let [event (edn/read-string event)]
+      (ensure-session! state stream (:session event) (:id event))
+      (dispatch-event! state stream event))
+    (catch Throwable t
+      (dispatch-event! state stream {:event :err :msg event :exception t}))))
+
+(defn chat-cleanup!
+  [state stream]
+  (let [session (session-for state stream)
+        id (id-for state stream)
+        event {:event :disconnect :session session :id id}]
+   (try
+     (when session
+       (dispatch-event! state :none event))
+     (disconnect! state stream)
+     (catch Throwable t
+       (println "ERROR:" t)))
+   (println "- chat" (pr-str event))))
 
 (defn chat-loop!
   [req]
   (let [stream @(http/websocket-connection req)]
     (go (loop []
-          (when-let [event (edn/read-string @(stream/take! stream))]
-            (try
-              (ensure-session! state stream (:session event))
-              (dispatch-event! state stream event)
-              (catch Throwable t
-                (dispatch-event! stream {:event :exception
-                                         :msg event
-                                         :exception t})))
+          (when-let [event @(stream/take! stream)]
+            (chat-invoke! state stream event)
             (recur)))
-        (disconnect! state stream)
-        (println "- chat terminated"))))
+        (chat-cleanup! state stream))))
 
 ;;-----------------------------------------------------------------------------
 ;; Handlers
@@ -129,7 +151,6 @@
 
 (defn chat
   [req]
-  (println "- chat")
   (chat-loop! req))
 
 (defn not-found
@@ -179,7 +200,7 @@
 
 (defn -main
   [& args]
-  (println "Welcome to the Pong Server")
+  (println "\n\n\n\n\nWelcome to the Pong Server")
   (let [lock (promise)
         server (http/start-server #(dispatch routes %) {:port 3001})]
     (hook-shutdown! #(println "Shutting down."))

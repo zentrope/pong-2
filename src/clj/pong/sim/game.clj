@@ -9,6 +9,10 @@
 
 ;;-----------------------------------------------------------------------------
 
+(def state
+  (atom {:players #{}
+         :hits {}}))
+
 (defmulti dispatch!
   (fn [client event] (:event event)))
 
@@ -22,13 +26,29 @@
   (println "stat:[" player "] ~ set session to: " @session))
 
 (defmethod dispatch! :join
-  [_ _]
-  ;; squelch
-  )
+  [{:keys [player session] :as client} event]
+  (println (:id event) " has joined the game")
+  (swap! state (fn [s] (-> (update-in s [:players] #(conj % (:id event)))
+                          (update-in [:hits] #(assoc % (:id event) 0)))))
+  (println "STATE:" @state))
+
+(defmethod dispatch! :disconnect
+  [client event]
+  (let [{:keys [stream session player]} client]
+    (swap! state (fn [s] (-> (update-in s [:players] #(disj % (:id event)))
+                            (update-in [:hits] #(dissoc % (:id event))))))
+    @(s/put! @stream (pr-str {:event :gameover :id player :session @session}))
+    (println "STATE:" @state)))
 
 (defmethod dispatch! :telemetry
-  [_ _]
+  [{:keys [player] :as client} event]
+  (swap! state update-in [:hits (:id event)] #(inc %))
+  (println "STATE:" @state)
+  ;;(println "recv:" event)
   ;; squelch
+
+  ;; When one of the players reaches 10, send the :gameover
+  ;; screen.
   )
 
 ;;-----------------------------------------------------------------------------
@@ -38,7 +58,9 @@
   (go (loop []
         (when-let [msg (edn/read-string @(s/take! @stream))]
           (println "recv:[" player "]" (pr-str msg))
-          (dispatch! client msg)
+          (try (dispatch! client msg)
+               (catch Throwable t
+                 (println "RECV.ERROR:" t)))
           (recur)))
       (println "stat:[" player "] terminating recv listener")
       (deliver lock :release)))
@@ -65,7 +87,7 @@
 
 (defn -main
   [& args]
-  (println "Game Simulator (for protocol development)")
+  (println "\nGame Simulator (for protocol development)")
   (try
     (let [client (make-client)]
       (start! client)

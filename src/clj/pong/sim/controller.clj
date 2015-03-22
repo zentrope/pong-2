@@ -57,7 +57,7 @@
 
 (defn -main
   [& args]
-  (println "Controller Simulation")
+  (println "\nController Simulation")
   (let [[player-id session-id] args
         player-id (keyword player-id)]
    (println " - player-id: " player-id)
