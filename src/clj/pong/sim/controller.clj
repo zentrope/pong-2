@@ -7,53 +7,64 @@
 
 (def lock (promise))
 
-(defprotocol LifeCycle
-  (start! [_])
-  (stop! [_]))
+
+(defn send-telemetry!
+  [stream stub value]
+  (let [msg (pr-str (assoc stub :y value))]
+    (when @(s/put! stream msg)
+      (println "send:[" (:id stub) "]" msg))))
 
 (defn send-loop!
-  [stream player-id session-id]
-  (let [stub {:id player-id :session session-id :event :telemetry}]
-    (go (loop [y 10]
+  [stream pid sid]
+  (let [stub {:id pid :session sid :event :telemetry}]
+    (go (dotimes [y 10]
           (<! (timeout 2000))
-          (when (> y 0)
-            (let [msg (pr-str (assoc stub :y y))]
-              (when @(s/put! stream msg)
-                (println "send:[" player-id "]" msg)
-                (recur (dec y))))))
-        (println "stat:[" player-id "] sends terminated")
+          (send-telemetry! stream stub y))
+        (println "stat:[" pid "] sends terminated")
         (deliver lock :release))))
+
+(defmulti dispatch!
+  (fn [stream msg]
+    (:event msg)))
+
+(defmethod dispatch! :default
+  [stream msg])
+
+(defmethod dispatch! :gameover
+  [stream msg]
+  (deliver lock :gameover))
 
 (defn recv-loop!
   [stream player-id]
   (go (loop []
-        (when-let [msg (edn/read-string @(s/take! stream))]
-          (println "recv:[" player-id "]" (pr-str msg))
+        (when-let [msg @(s/take! stream)]
+          (println "recv:[" player-id "]" msg)
+          (try
+            (dispatch! stream (edn/read-string msg))
+            (catch Throwable t
+              (dispatch! stream {:event :err :error t :msg msg})))
           (recur)))
       (println "stat:[" player-id "] terminating recv listener")
       (deliver lock :release)))
 
-(defrecord ControllerClient [stream player-id session-id]
+(defn start!
+  [{:keys [pid sid stream] :as controller}]
+  (reset! stream @(http/websocket-client "ws://localhost:3001/ws"))
+  (recv-loop! @stream pid)
+  (send-loop! @stream pid sid)
+  @(s/put! @stream (pr-str {:event :join :id pid :session sid}))
+  controller)
 
-  LifeCycle
+(defn stop!
+  [{:keys [pid sid stream] :as controller}]
+  (when @stream
+    (.close @stream))
+  (reset! stream nil)
+  controller)
 
-  (start! [this]
-    (println "stat:[" player-id "] starting")
-    (reset! stream @(http/websocket-client "ws://localhost:3001/ws"))
-    (recv-loop! @stream player-id)
-    (send-loop! @stream player-id session-id)
-    (when-not @(s/put! @stream
-                       (pr-str {:event :join :id player-id :session session-id}))
-      (println "stat:[" player-id "] no route to server")
-      (stop! this)))
-
-  (stop! [_]
-    (println "stat:[" player-id "] stopping")
-    (.close @stream)))
-
-(defn make-controller
-  [player-id session-id]
-  (ControllerClient. (atom nil) player-id session-id))
+(defn controller
+  [pid sid]
+  {:pid pid :sid sid :stream (atom nil)})
 
 (defn -main
   [& args]
@@ -64,7 +75,7 @@
    (println " - session-id:" session-id)
 
    (try
-     (let [controller (make-controller player-id session-id)]
+     (let [controller (controller player-id session-id)]
        (start! controller)
        @lock
        (stop! controller))
