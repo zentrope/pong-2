@@ -18,40 +18,51 @@
   [stream pid sid]
   (let [stub {:id pid :session sid :event :telemetry}]
     (go (dotimes [y 10]
-          (<! (timeout 2000))
+          (<! (timeout (rand-nth [1000 3000])))
           (send-telemetry! stream stub y))
         (println "stat:[" pid "] sends terminated")
         (deliver lock :release))))
 
 (defmulti dispatch!
-  (fn [stream msg]
+  (fn [stream pid msg]
     (:event msg)))
 
 (defmethod dispatch! :default
-  [stream msg])
+  [stream pid msg])
+
+(defmethod dispatch! :gamestart
+  [stream pid msg]
+  (send-loop! stream pid (:session msg)))
+
+(defmethod dispatch! :disconnect
+  [stream pid msg]
+  (deliver lock :disconnect))
 
 (defmethod dispatch! :gameover
-  [stream msg]
+  [stream pid msg]
   (deliver lock :gameover))
 
+(defmethod dispatch! :err
+  [stream pid msg]
+  (println "  :: ERROR ::" msg))
+
 (defn recv-loop!
-  [stream player-id]
+  [stream pid]
   (go (loop []
         (when-let [msg @(s/take! stream)]
-          (println "recv:[" player-id "]" msg)
+          (println "recv:[" pid "]" msg)
           (try
-            (dispatch! stream (edn/read-string msg))
+            (dispatch! stream pid (edn/read-string msg))
             (catch Throwable t
-              (dispatch! stream {:event :err :error t :msg msg})))
+              (dispatch! stream pid {:event :err :error t :msg msg})))
           (recur)))
-      (println "stat:[" player-id "] terminating recv listener")
+      (println "stat:[" pid "] terminating recv listener")
       (deliver lock :release)))
 
 (defn start!
   [{:keys [pid sid stream] :as controller}]
   (reset! stream @(http/websocket-client "ws://localhost:3001/ws"))
   (recv-loop! @stream pid)
-  (send-loop! @stream pid sid)
   @(s/put! @stream (pr-str {:event :join :id pid :session sid}))
   controller)
 

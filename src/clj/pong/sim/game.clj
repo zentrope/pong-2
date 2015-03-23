@@ -9,9 +9,19 @@
 
 ;;-----------------------------------------------------------------------------
 
+(def default-state
+  {:players #{}
+   :hits {}})
+
 (def state
-  (atom {:players #{}
-         :hits {}}))
+  (atom default-state))
+
+(defn reset-state!
+  []
+  (reset! state default-state))
+
+(add-watch state :debug (fn [_ _ _ n]
+                          (println "STATE:" n)))
 
 (defmulti dispatch!
   (fn [client event] (:event event)))
@@ -26,30 +36,25 @@
   (println "stat:[" player "] ~ set session to: " @session))
 
 (defmethod dispatch! :join
-  [{:keys [player session] :as client} event]
+  [{:keys [stream player session] :as client} event]
   (println (:id event) " has joined the game")
   (swap! state (fn [s] (-> (update-in s [:players] #(conj % (:id event)))
                           (update-in [:hits] #(assoc % (:id event) 0)))))
-  (println "STATE:" @state))
+  (when (= 2 (count (:players @state)))
+    @(s/put! @stream (pr-str {:event :gamestart :id player :session @session}))))
 
 (defmethod dispatch! :disconnect
   [client event]
   (let [{:keys [stream session player]} client]
-    (swap! state (fn [s] (-> (update-in s [:players] #(disj % (:id event)))
-                            (update-in [:hits] #(dissoc % (:id event))))))
-    @(s/put! @stream (pr-str {:event :gameover :id player :session @session}))
-    (println "STATE:" @state)))
+    (reset-state!)
+    @(s/put! @stream (pr-str {:event :gameover :id player :session @session}))))
 
 (defmethod dispatch! :telemetry
-  [{:keys [player] :as client} event]
-  (swap! state update-in [:hits (:id event)] #(inc %))
-  (println "STATE:" @state)
-  ;;(println "recv:" event)
-  ;; squelch
-
-  ;; When one of the players reaches 10, send the :gameover
-  ;; screen.
-  )
+  [{:keys [player stream session] :as client} event]
+  (swap! state update-in [:hits (:id event)] #(when % (inc %)))
+  (when-let [pid (some (fn [[k v]] (when (= v 5) k)) (:hits @state))]
+    (reset-state!)
+    @(s/put! @stream (pr-str {:event :gameover :id player :session @session :winner pid}))))
 
 ;;-----------------------------------------------------------------------------
 
@@ -60,7 +65,9 @@
           (println "recv:[" player "]" (pr-str msg))
           (try (dispatch! client msg)
                (catch Throwable t
-                 (println "RECV.ERROR:" t)))
+                 (println "RECV.ERROR:" t)
+                 (when (instance? java.lang.NullPointerException t)
+                   (clojure.stacktrace/print-stack-trace t))))
           (recur)))
       (println "stat:[" player "] terminating recv listener")
       (deliver lock :release)))
