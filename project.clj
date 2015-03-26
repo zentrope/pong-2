@@ -28,7 +28,7 @@
 
              :dev
              {:dependencies
-              [[org.clojure/tools.nrepl "0.2.8"]] ;; override lein
+              [[org.clojure/tools.nrepl "0.2.9"]] ;; override lein
               :plugins
               [[lein-ancient "0.6.5"]
                [cider/cider-nrepl "0.9.0-SNAPSHOT"]]}})

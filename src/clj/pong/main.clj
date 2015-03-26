@@ -44,8 +44,7 @@
 
 (defn ensure-session!
   [state stream sid pid]
-  (when-not (or (nil? sid)
-                (= (get @state stream) sid))
+  (when-not (or (nil? sid) (= (get @state stream) sid))
     (swap! state #(-> (dissoc % stream)
                       (assoc stream {:sid sid :pid pid})))))
 
@@ -82,7 +81,6 @@
 
 (defmethod dispatch-event! :default
   [state stream event]
-  ;; By default, publish.
   (publish! state stream event))
 
 (defmethod dispatch-event! :join

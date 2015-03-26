@@ -20,7 +20,6 @@
     (go (dotimes [y 10]
           (<! (timeout (rand-nth [1000 3000])))
           (send-telemetry! stream stub y))
-        (println "stat:[" pid "] sends terminated")
         (deliver lock :release))))
 
 (defmulti dispatch!
@@ -56,7 +55,6 @@
             (catch Throwable t
               (dispatch! stream pid {:event :err :error t :msg msg})))
           (recur)))
-      (println "stat:[" pid "] terminating recv listener")
       (deliver lock :release)))
 
 (defn start!
