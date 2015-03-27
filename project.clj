@@ -13,9 +13,15 @@
    [clout "2.1.0"]
    [org.clojure/data.priority-map "0.0.6"]]
 
-  :source-paths ["src/clj"]
+  :source-paths ["src/clj" "src/cljs"]
 
   :main ^:skip-aot pong.main
+
+  :clean-targets
+  ^{:protect false}
+  ["resources/www/out"
+   "resources/www/main.js"
+   :target-path]
 
   :global-vars {*warn-on-reflection* false}
 
@@ -23,12 +29,28 @@
             "player1" ["run" "-m" "pong.sim.controller" "player1"]
             "player2" ["run" "-m" "pong.sim.controller" "player2"]}
 
+  :cljsbuild
+  {:builds [{:id "dev"
+             :source-paths ["src/cljs"]
+             :compiler {:output-to "resources/www/main.js"
+                        :output-dir "resources/www/out"
+                        :optimizations :none
+                        :cache-analysis true
+                        :source-map false}}
+            {:id "release"
+             :source-paths ["src/cljs"]
+             :compiler {:output-to "resources/www/main.js"
+                        :pretty-print true
+                        :optimizations :whitespace}}]}
+
   :profiles {:uberjar
              {:aot :all}
 
              :dev
              {:dependencies
-              [[org.clojure/tools.nrepl "0.2.9"]] ;; override lein
+              [[org.clojure/tools.nrepl "0.2.10"] ;; override lein
+               [org.clojure/clojurescript "0.0-3123"]]
               :plugins
               [[lein-ancient "0.6.5"]
+               [lein-cljsbuild "1.0.5"]
                [cider/cider-nrepl "0.9.0-SNAPSHOT"]]}})
