@@ -71,7 +71,7 @@
 
 (extend-type GameNet
   IDrawable
-  (draw! [- ctx]
+  (draw! [_ ctx]
     (.save ctx)
     (aset ctx "lineWidth" "1")
     (aset ctx "strokeStyle" SCORE_COLOR)
@@ -100,7 +100,7 @@
     (aset ctx "font" "italic 12px Helvetica")
     (aset ctx "fillStyle" "slategray")
     (.fillText ctx "Position the mouse near a paddle to move that paddle." MID_W 370)
-    (.fillText ctx "[ Spacebar ] to pause ." MID_W 410)
+    (.fillText ctx "[ Spacebar ] to pause." MID_W 410)
     (.fillText ctx "[ Escape ] to quit." MID_W 430)
     (.restore ctx)))
 
@@ -300,6 +300,7 @@
                   :game-start (merge % objects {:mode :playing})
                   :game-over (assoc % :mode :game-start)
                   (assoc % :pause? (not (:pause? %))))))
+
 (defn- event-loop!
   [state ch]
   (go-loop []
@@ -341,4 +342,8 @@
     (resize! state ctx)
     (animate-loop! state ctx)))
 
-(set! (.-onload js/window) main)
+(defn ^:export startGame
+  []
+  (main))
+
+;;(set! (.-onload js/window) main)
