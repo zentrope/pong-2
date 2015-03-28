@@ -103,6 +103,7 @@
   [state stream event]
   (try
     (let [event (edn/read-string event)]
+      (println "event:" (pr-str event))
       (ensure-session! state stream (:session event) (:id event))
       (dispatch-event! state stream event))
     (catch Throwable t
