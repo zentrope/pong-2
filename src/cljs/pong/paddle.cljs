@@ -30,7 +30,7 @@
   (dom/show! (dom/by-id "session-button"))
   (dom/hide! (dom/by-id "paddle"))
   (dom/show! (dom/by-id "session-form"))
-  (.focus (dom/by-id "session")))
+  (dom/focus! (dom/by-id "session")))
 
 (defmethod view-mode :playing
   [state]
@@ -39,25 +39,15 @@
   (dom/show! (dom/by-id "paddle")))
 
 ;;-----------------------------------------------------------------------------
-;; Math
-;;-----------------------------------------------------------------------------
-
-(defn- place
-  [y]
-  (let [h (.-innerHeight js/window)]
-    (js/Math.round (* 100 (/ y h)))))
-
-;;-----------------------------------------------------------------------------
 ;; Events
 ;;-----------------------------------------------------------------------------
 
 (defn- paddle-move!
   [e {:keys [ws id session mode]}]
   (when (= mode :playing)
-    (let [x (.-clientX e)
-          y (.-clientY e)
+    (let [y (.-clientY e)
           p (dom/by-id "paddle")
-          coord (place y)
+          coord (js/Math.round (* 100 (/ y (.-innerHeight js/window))))
           m {:id id :session session :event :telemetry :y coord}]
       (sk/send! ws (pr-str m))
       (dom/set-css! p "top" (dom/px (- y paddle-radius)))
@@ -108,7 +98,8 @@
 
 (defmulti handle!
   (fn [state msg]
-    (:event msg)))
+      (println "event:" (pr-str msg))
+      (:event msg)))
 
 (defmethod handle! :default
   [state msg])
@@ -125,7 +116,6 @@
 
 (defmethod handle! :client/join
   [state msg]
-  (println "join request" msg)
   (let [{:keys [session id ws]} @state]
     (sk/send! ws {:event :join :session session :id id})
     (swap! state assoc :mode :playing)
@@ -146,7 +136,6 @@
   [state]
   (go-loop []
     (when-let [msg (<! (:event-ch @state))]
-      (println "event:" (pr-str msg))
       (try
         (handle! state msg)
         (catch js/Error e
@@ -163,12 +152,11 @@
   (window-resize!)
 
   (let [event-ch (chan)
-        socket (sk/socket! event-ch)]
+        socket (sk/socket! event-ch)
+        pid (keyword (str "player-" pid))]
 
     (sk/open! socket)
-    (swap! state merge {:ws socket
-                        :event-ch event-ch
-                        :id (keyword (str "player-" pid))})
+    (swap! state merge {:ws socket :event-ch event-ch :id pid})
 
     (view-mode @state)
     (events! state)

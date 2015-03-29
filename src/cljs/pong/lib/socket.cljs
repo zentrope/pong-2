@@ -7,7 +7,7 @@
   (let [sock (js/WebSocket. url)]
     (aset sock "onerror"   #(put! ch {:event :socket/error :err %}))
     (aset sock "onmessage" #(put! ch (reader/read-string (.-data %))))
-    (aset sock "onclose"   #(put! ch  {:event :socket/close}))
+    (aset sock "onclose"   #(put! ch {:event :socket/close}))
     (aset sock "onopen"    #(put! ch {:event :socket/open}))
     (reset! ws sock)))
 

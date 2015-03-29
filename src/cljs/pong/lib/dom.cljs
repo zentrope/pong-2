@@ -33,3 +33,8 @@
   [el]
   (set-css! el "display" "block")
   el)
+
+(defn focus!
+  [el]
+  (.focus el)
+  el)
