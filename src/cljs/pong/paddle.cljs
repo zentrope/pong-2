@@ -1,7 +1,9 @@
 (ns pong.paddle
   (:require-macros [cljs.core.async.macros :refer [go-loop]])
   (:require [cljs.core.async :refer [put! chan]]
-            [cljs.reader :as reader]))
+            [cljs.reader :as reader]
+            [pong.lib.dom :as dom]
+            [pong.lib.socket :as sk]))
 
 (enable-console-print!)
 
@@ -13,79 +15,6 @@
 (def paddle-color {1 "peru" 2 "dodgerblue"})
 
 ;;-----------------------------------------------------------------------------
-;; Socket
-;;-----------------------------------------------------------------------------
-
-(defn- sk-start!
-  [{:keys [url ws ch] :as socket}]
-  (let [sock (js/WebSocket. url)]
-    (aset sock "onerror"   #(put! ch {:event :socket/error :err %}))
-    (aset sock "onmessage" #(put! ch (reader/read-string (.-data %))))
-    (aset sock "onclose"   #(put! ch  {:event :socket/close}))
-    (aset sock "onopen"    #(put! ch {:event :socket/open}))
-    (reset! ws sock)))
-
-(defn- sk-stop!
-  [{:keys [url ws ch] :as socket}]
-  (aset @ws "onclose" nil)
-  (.-close @ws)
-  (reset! ws nil))
-
-(defn- sk-send!
-  [{:keys [url ws ch] :as socket} msg]
-  (try
-    (.send @ws msg)
-    (catch js/Error e
-      (println "socket-exception:" e)
-      (put! ch {:event :socket/exception :err e}))))
-
-(defn- socket!
-  [event-ch]
-  (let [host (.-hostname (.-location js/window))
-        port (.-port (.-location js/window))]
-    {:url (str "ws://" host ":" port "/ws")
-     :ws (atom nil)
-     :ch event-ch}))
-
-;;-----------------------------------------------------------------------------
-;; DOM
-;;-----------------------------------------------------------------------------
-
-(defn- px
-  [v]
-  (str v "px"))
-
-(defn- by-id
-  [id]
-  (.getElementById js/document id))
-
-(defn- listen!
-  [el type fn]
-  (.addEventListener el type fn false)
-  el)
-
-(defn- set-html!
-  [el html]
-  (aset el "innerHTML" html)
-  el)
-
-(defn- set-css!
-  [el attr val]
-  (-> (aget el "style")
-      (aset attr val))
-  el)
-
-(defn- hide
-  [el]
-  (set-css! el "display" "none")
-  el)
-
-(defn- show
-  [el]
-  (set-css! el "display" "block")
-  el)
-
-;;-----------------------------------------------------------------------------
 ;; Renders
 ;;-----------------------------------------------------------------------------
 
@@ -94,20 +23,20 @@
 
 (defmethod view-mode :wait
   [state]
-  (show (by-id "session-button")))
+  (dom/show! (dom/by-id "session-button")))
 
 (defmethod view-mode :prejoin
   [state]
-  (show (by-id "session-button"))
-  (hide (by-id "paddle"))
-  (show (by-id "session-form"))
-  (.focus (by-id "session")))
+  (dom/show! (dom/by-id "session-button"))
+  (dom/hide! (dom/by-id "paddle"))
+  (dom/show! (dom/by-id "session-form"))
+  (.focus (dom/by-id "session")))
 
 (defmethod view-mode :playing
   [state]
-  (hide (by-id "session-button"))
-  (hide (by-id "session-form"))
-  (show (by-id "paddle")))
+  (dom/hide! (dom/by-id "session-button"))
+  (dom/hide! (dom/by-id "session-form"))
+  (dom/show! (dom/by-id "paddle")))
 
 ;;-----------------------------------------------------------------------------
 ;; Math
@@ -127,12 +56,12 @@
   (when (= mode :playing)
     (let [x (.-clientX e)
           y (.-clientY e)
-          p (by-id "paddle")
+          p (dom/by-id "paddle")
           coord (place y)
           m {:id id :session session :event :telemetry :y coord}]
-      (sk-send! ws (pr-str m))
-      (set-css! p "top" (px (- y paddle-radius)))
-      (set-html! (by-id "debug") (pr-str m)))))
+      (sk/send! ws (pr-str m))
+      (dom/set-css! p "top" (dom/px (- y paddle-radius)))
+      (dom/set-html! (dom/by-id "debug") (pr-str m)))))
 
 (defn- join-button!
   [e event-ch]
@@ -155,9 +84,9 @@
   []
   (let [w (.-innerWidth js/window)
         h (.-innerHeight js/window)
-        p (by-id "paddle")
-        midway (px (- (int (/ w 2)) paddle-offset))]
-    (set-css! p "left" midway)))
+        p (dom/by-id "paddle")
+        midway (dom/px (- (int (/ w 2)) paddle-offset))]
+    (dom/set-css! p "left" midway)))
 
 ;;-----------------------------------------------------------------------------
 ;; State
@@ -170,8 +99,8 @@
          :mode :prejoin ;; :wait :playing
          :event-ch nil}))
 
-(add-watch state :debug (fn [_ _ _ n]
-                          (println "state:" (pr-str n))))
+#_(add-watch state :debug (fn [_ _ _ n]
+                            (println "state:" (pr-str n))))
 
 ;;-----------------------------------------------------------------------------
 ;; Comm
@@ -198,7 +127,7 @@
   [state msg]
   (println "join request" msg)
   (let [{:keys [session id ws]} @state]
-    (sk-send! ws {:event :join :session session :id id})
+    (sk/send! ws {:event :join :session session :id id})
     (swap! state assoc :mode :playing)
     (view-mode @state)))
 
@@ -234,9 +163,9 @@
   (window-resize!)
 
   (let [event-ch (chan)
-        socket (socket! event-ch)]
+        socket (sk/socket! event-ch)]
 
-    (sk-start! socket)
+    (sk/open! socket)
     (swap! state merge {:ws socket
                         :event-ch event-ch
                         :id (keyword (str "player-" pid))})
@@ -244,13 +173,13 @@
     (view-mode @state)
     (events! state)
 
-    (-> (by-id "paddle")
-        (set-css! "background-color" (get paddle-color pid)))
+    (-> (dom/by-id "paddle")
+        (dom/set-css! "background-color" (get paddle-color pid)))
 
-    (listen! (by-id "session-button") "click" #(join-button! % event-ch))
-    (listen! (by-id "session-form") "keyup" #(session-form! % event-ch))
-    (listen! js/window "mousemove" #(paddle-move! % @state))
-    (listen! js/window "resize" #(window-resize!))))
+    (dom/listen! (dom/by-id "session-button") "click" #(join-button! % event-ch))
+    (dom/listen! (dom/by-id "session-form") "keyup" #(session-form! % event-ch))
+    (dom/listen! js/window "mousemove" #(paddle-move! % @state))
+    (dom/listen! js/window "resize" #(window-resize!))))
 
 (defn ^:export start
   [paddle-num]
