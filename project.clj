@@ -49,7 +49,7 @@
              :dev
              {:dependencies
               [[org.clojure/tools.nrepl "0.2.10"] ;; override lein
-               [org.clojure/clojurescript "0.0-3123"]]
+               [org.clojure/clojurescript "0.0-3165"]]
               :plugins
               [[lein-ancient "0.6.5"]
                [lein-cljsbuild "1.0.5"]
