@@ -274,7 +274,9 @@
     (draw-phase! state ctx))
   (.requestAnimationFrame js/window (partial animate-loop! state ctx)))
 
+;;-----------------------------------------------------------------------------
 ;; Control
+;;-----------------------------------------------------------------------------
 
 (defn resize!
   [state ctx]
@@ -306,12 +308,12 @@
           w (- (.-innerWidth js/window) 40)
           h (- (int (/ (* w 9) 16)) 40)
           sh (/ h SCALE-H)
-          new-y (int (/ (- (.-clientY e) (.-offsetTop t)) sh))
+          y (int (/ (- (.-clientY e) (.-offsetTop t)) sh))
           x (.-clientX e)
           ww (/ (.-innerWidth js/window) 2)
           paddle (if (>= x ww) :paddle-2 :paddle-1)
           object (get @state paddle)]
-      (swap! state assoc paddle (position! object new-y)))))
+      (swap! state assoc paddle (position! object y)))))
 
 (def key-stroke-stream
   (comp (map #(or (get KEYBOARD %) :keyboard/unknown))
@@ -331,10 +333,19 @@
   [state event-ch msg]
   (println "unhandled: " msg))
 
+;; server
 (defmethod handle! :session
   [state event-ch msg]
   (when (= (:id msg) :game)
     (swap! state assoc :session (:session msg))))
+
+;; server
+(defmethod handle! :telemetry
+  [state event-ch msg]
+  (let [{:keys [y id]} msg
+        y (* 450 (/ y 100))
+        object (get @state id)]
+    (swap! state assoc id (position! object y))))
 
 (defmethod handle! :keyboard/abort
   [state event-ch msg]

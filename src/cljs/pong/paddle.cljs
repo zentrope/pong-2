@@ -12,7 +12,7 @@
 (def paddle-width 50)
 (def paddle-offset (int (/ paddle-width 2)))
 
-(def paddle-color {1 "peru" 2 "dodgerblue"})
+(def paddle-color {1 "dodgerblue" 2 "peru"})
 
 ;;-----------------------------------------------------------------------------
 ;; Renders
@@ -156,7 +156,7 @@
 
   (let [event-ch (chan)
         socket (sk/socket! event-ch)
-        paddle-id (keyword (str "player-" pid))]
+        paddle-id (keyword (str "paddle-" pid))]
 
     (swap! state merge {:ws socket :event-ch event-ch :id paddle-id})
 
