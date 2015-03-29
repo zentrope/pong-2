@@ -27,6 +27,7 @@ div#paddle {
   height: 200px;
   width: 50px;
   background-color: peru;
+  display: none;
 }
 
 div#session-form {

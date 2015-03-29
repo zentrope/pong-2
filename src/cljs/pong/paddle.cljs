@@ -151,18 +151,18 @@
 
   (window-resize!)
 
+  (-> (dom/by-id "paddle")
+      (dom/set-css! "background-color" (get paddle-color pid)))
+
   (let [event-ch (chan)
         socket (sk/socket! event-ch)
-        pid (keyword (str "player-" pid))]
+        paddle-id (keyword (str "player-" pid))]
 
     (sk/open! socket)
-    (swap! state merge {:ws socket :event-ch event-ch :id pid})
+    (swap! state merge {:ws socket :event-ch event-ch :id paddle-id})
 
     (view-mode @state)
     (events! state)
-
-    (-> (dom/by-id "paddle")
-        (dom/set-css! "background-color" (get paddle-color pid)))
 
     (dom/listen! (dom/by-id "session-button") "click" #(join-button! % event-ch))
     (dom/listen! (dom/by-id "session-form") "keyup" #(session-form! % event-ch))
