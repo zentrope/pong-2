@@ -2,7 +2,9 @@
   (:require-macros
    [cljs.core.async.macros :refer [go-loop]])
   (:require
-   [cljs.core.async :refer [chan <! put! sliding-buffer]]))
+   [cljs.core.async :refer [chan <! put! alts!]]
+   [pong.lib.dom :as dom]
+   [pong.lib.socket :as sk]))
 
 (enable-console-print!)
 
@@ -19,7 +21,8 @@
 (def SCORE_FONT "60px Helvetica")
 (def SCORE_COLOR "slategray")
 
-(def KEYBOARD {27 :abort 32 :space})
+(def KEYBOARD {27 :keyboard/abort
+               32 :keyboard/space})
 
 ;; Math
 
@@ -31,16 +34,6 @@
   [x1 y1 x2 y2]
   (js/Math.sqrt (+ (sqr (- x2 x1))
                    (sqr (- y2 y1)))))
-
-;; DOM
-
-(defn by-id
-  [id]
-  (.getElementById js/document id))
-
-(defn listen!
-  [el type fn]
-  (.addEventListener el type fn false))
 
 ;; Object Definitions
 
@@ -55,7 +48,7 @@
 ;; Drawable Objects
 
 (defprotocol IDrawable
-  (draw! [_ ctx]))
+  (draw! [_ ctx] [_ ctx session]))
 
 (extend-type GameBackground
   IDrawable
@@ -85,7 +78,7 @@
 
 (extend-type GameStartScreen
   IDrawable
-  (draw! [_ ctx]
+  (draw! [_ ctx session]
     (.save ctx)
     (aset ctx "textAlign" "center")
     (aset ctx "font" "60px Helvetica")
@@ -94,6 +87,9 @@
     (aset ctx "font" "italic 14px Helvetica")
     (aset ctx "fillStyle" "slategray")
     (.fillText ctx "single player" MID_W 150)
+    (aset ctx "font" "50px Helvetica")
+    (aset ctx "fillStyle" "lime")
+    (.fillText ctx session MID_W 230)
     (aset ctx "font" "20px Helvetica")
     (aset ctx "fillStyle" "dodgerblue")
     (.fillText ctx "Press the spacebar to start." MID_W 300)
@@ -146,13 +142,13 @@
     (.closePath ctx)
     (.restore ctx)))
 
-;; Moveable Objects
+;; Animated Objects
 
-(defprotocol IMovable
+(defprotocol IAnimatable
   (move [_]))
 
 (extend-type Ball
-  IMovable
+  IAnimatable
   (move [{:keys [x y vx vy radius] :as ball}]
     (cond
       (= x radius) (assoc ball :x -100)
@@ -160,13 +156,13 @@
       :else (let [vy (if (< radius y (- SCALE-H radius)) vy (* -1 vy))]
               (assoc ball :x (+ x vx) :y (+ y vy) :vy vy)))))
 
-;; Controllable Objects
+;; Movable Objects
 
-(defprotocol IPositionable
+(defprotocol IMovable
   (position! [_ y]))
 
 (extend-type Paddle
-  IPositionable
+  IMovable
   (position! [{:keys [y height] :as paddle} new-y]
     (let [new-y (- new-y (/ height 2))
           new-y (cond
@@ -211,6 +207,8 @@
   (atom (merge objects
                {:mode :game-start ;; game-start game-over playing
                 :pause? false
+                :socket nil
+                :session "-"
                 :current-paddle :paddle-1})))
 
 ;; Animation
@@ -225,7 +223,7 @@
   (when (contains? #{:game-over} (:mode @state))
     (draw! (:game-over @state) ctx))
   (when (contains? #{:game-start} (:mode @state))
-    (draw! (:game-start @state) ctx))
+    (draw! (:game-start @state) ctx (:session @state)))
   (when (contains? #{:playing} (:mode @state))
     (draw! (:net @state) ctx)
     (draw! (:paddle-1 @state) ctx)
@@ -282,7 +280,7 @@
   [state ctx]
   (let [w (- (.-innerWidth js/window) 40)
         h (- (int (/ (* w 9) 16)) 40)
-        canvas (by-id "canvas")]
+        canvas (dom/by-id "canvas")]
     (aset canvas "width" w)
     (aset canvas "height" h)
     (.scale ctx (/ w SCALE-W) (/ h SCALE-H))
@@ -301,16 +299,6 @@
                   :game-over (assoc % :mode :game-start)
                   (assoc % :pause? (not (:pause? %))))))
 
-(defn- event-loop!
-  [state ch]
-  (go-loop []
-    (when-let [event (<! ch)]
-      (case event
-        :abort (pause-or-abort! state)
-        :space (pause-or-next! state)
-        (println "Unhandled event:" event))
-      (recur))))
-
 (defn- paddle-move!
   [state e]
   (when (= (:mode @state) :playing)
@@ -326,19 +314,69 @@
       (swap! state assoc paddle (position! object new-y)))))
 
 (def key-stroke-stream
-  (comp (map #(or (get KEYBOARD %) :unknown))
-        (filter #(not= % :unknown))))
+  (comp (map #(or (get KEYBOARD %) :keyboard/unknown))
+        (filter #(not= % :keyboard/unknown))
+        (map #(assoc {} :event %))))
+
+;;-----------------------------------------------------------------------------
+;; Events
+;;-----------------------------------------------------------------------------
+
+(defmulti handle!
+  (fn [state event-ch msg]
+    (println "msg:" msg)
+    (:event msg)))
+
+(defmethod handle! :default
+  [state event-ch msg]
+  (println "unhandled: " msg))
+
+(defmethod handle! :session
+  [state event-ch msg]
+  (when (= (:id msg) :game)
+    (swap! state assoc :session (:session msg))))
+
+(defmethod handle! :keyboard/abort
+  [state event-ch msg]
+  (pause-or-abort! state))
+
+(defmethod handle! :keyboard/space
+  [state event-ch msg]
+  (pause-or-next! state))
+
+(defmethod handle! :socket/open
+  [state event-ch msg]
+  (sk/send! (:ws @state) {:event :session :id :game}))
+
+(defn- event-loop!
+  [state key-ch event-ch]
+  (go-loop []
+    (when-let [[msg _] (alts! [key-ch event-ch])]
+      (try
+        (handle! state event-ch msg)
+        (catch js/Error e
+          (handle! state event-ch {:event :err :error e :msg msg})))
+      (recur))))
+
+;;-----------------------------------------------------------------------------
+;; Boot
+;;-----------------------------------------------------------------------------
 
 (defn- main
   []
   (println "Welcome to Pong Single Player")
-  (let [canvas (by-id "canvas")
+  (let [canvas (dom/by-id "canvas")
         ctx (.getContext canvas "2d")
-        events (chan 1 key-stroke-stream)]
-    (event-loop! state events)
-    (listen! js/window "resize" #(resize! state ctx))
-    (listen! js/document "keydown" #(put! events (.-keyCode %)))
-    (listen! canvas "mousemove" #(paddle-move! state %))
+        key-ch (chan 1 key-stroke-stream)
+        event-ch (chan)
+        socket (sk/socket! event-ch)]
+    (swap! state assoc :ws socket)
+    (event-loop! state key-ch event-ch)
+
+    (sk/open! socket)
+    (dom/listen! js/window "resize" #(resize! state ctx))
+    (dom/listen! js/document "keydown" #(put! key-ch (.-keyCode %)))
+    (dom/listen! canvas "mousemove" #(paddle-move! state %))
     (resize! state ctx)
     (animate-loop! state ctx)))
 

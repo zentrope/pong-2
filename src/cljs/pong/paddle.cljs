@@ -158,11 +158,11 @@
         socket (sk/socket! event-ch)
         paddle-id (keyword (str "player-" pid))]
 
-    (sk/open! socket)
     (swap! state merge {:ws socket :event-ch event-ch :id paddle-id})
 
     (view-mode @state)
     (events! state)
+    (sk/open! socket)
 
     (dom/listen! (dom/by-id "session-button") "click" #(join-button! % event-ch))
     (dom/listen! (dom/by-id "session-form") "keyup" #(session-form! % event-ch))

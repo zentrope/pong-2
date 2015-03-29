@@ -54,7 +54,8 @@
   (swap! state update-in [:hits (:id event)] #(when % (inc %)))
   (when-let [pid (some (fn [[k v]] (when (= v 5) k)) (:hits @state))]
     (reset-state!)
-    @(s/put! @stream (pr-str {:event :gameover :id player :session @session :winner pid}))))
+    @(s/put! @stream (pr-str {:event :gameover :id player
+                              :session @session :winner pid}))))
 
 ;;-----------------------------------------------------------------------------
 
