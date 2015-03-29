@@ -1,6 +1,14 @@
 html, body {
   background: #212021;
   color: #555;
+  font-family: "Helvetica Neue", helvetica, sans-serif;
+  font-weight: 100;
+}
+
+div#player {
+  text-align: center;
+  font-variant: small-caps;
+  letter-spacing: 2px;
 }
 
 div#debug {
@@ -9,6 +17,7 @@ div#debug {
   left: 0;
   right: 0;
   text-align: center;
+  font-family: menlo, monospace;
 }
 
 div#paddle {
@@ -18,4 +27,55 @@ div#paddle {
   height: 200px;
   width: 50px;
   background-color: peru;
+}
+
+div#session-form {
+  position: absolute;
+  top: 50px;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+
+input#session {
+  width: 80vw;
+  border: 1px solid #555;
+  background-color: black;
+  color: dodgerblue;
+  font-size: 40pt;
+  outline: none;
+  padding: 10px;
+  text-align: center;
+  font-family: inherit !important;
+  letter-spacing: 3px;
+  font-weight: 100;
+}
+
+input#session::-webkit-input-placeholder {
+  color: #333;
+}
+
+
+div#session-button {
+  position: absolute;
+  top: 200px;
+  left: 0;
+  right: 0;
+  text-align: center;
+}
+
+button#join {
+  font-size: 32pt;
+  width: 60vw;
+  background-color: transparent;
+  border: none;
+  color: dodgerblue;
+}
+
+button#join:hover {
+  color: gold;
+}
+
+button#join:active {
+  color: red;
 }

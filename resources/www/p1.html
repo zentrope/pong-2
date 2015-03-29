@@ -5,7 +5,22 @@
     <link href="paddle.css" type="text/css" rel="stylesheet"/>
   </head>
   <body onLoad="pong.paddle.start(1)">
-    <div class="player">player 1</div>
+
+    <div id="player">player 1</div>
+
+    <div id="session-form">
+      <input id="session"
+             type="text"
+             maxlength="10"
+             autocomplete="off"
+             spellcheck="false"
+             placeholder="Game session number"/>
+    </div>
+
+    <div id="session-button">
+      <button id="join">JOIN</button>
+    </div>
+
     <div id="debug"></div>
     <div id="paddle"></div>
     <script src="main.js" type="text/javascript"></script>
