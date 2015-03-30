@@ -1,8 +1,8 @@
 (ns pong.main
   (:require-macros
-   [cljs.core.async.macros :refer [go-loop]])
+   [cljs.core.async.macros :refer [go-loop go]])
   (:require
-   [cljs.core.async :refer [chan <! put! alts!]]
+   [cljs.core.async :refer [chan <! put! timeout]]
    [pong.lib.dom :as dom]
    [pong.lib.socket :as sk]))
 
@@ -20,9 +20,6 @@
 
 (def SCORE_FONT "60px Helvetica")
 (def SCORE_COLOR "slategray")
-
-(def KEYBOARD {27 :keyboard/abort
-               32 :keyboard/space})
 
 ;; Math
 
@@ -86,18 +83,13 @@
     (.fillText ctx "Welcome to Pong!" MID_W 100)
     (aset ctx "font" "italic 14px Helvetica")
     (aset ctx "fillStyle" "slategray")
-    (.fillText ctx "single player" MID_W 150)
-    (aset ctx "font" "50px Helvetica")
+    (.fillText ctx "two player" MID_W 150)
+    (aset ctx "font" "70px Helvetica")
     (aset ctx "fillStyle" "lime")
-    (.fillText ctx session MID_W 230)
-    (aset ctx "font" "20px Helvetica")
+    (.fillText ctx session MID_W 300)
+    (aset ctx "font" "italic 20px Helvetica")
     (aset ctx "fillStyle" "dodgerblue")
-    (.fillText ctx "Press the spacebar to start." MID_W 300)
-    (aset ctx "font" "italic 12px Helvetica")
-    (aset ctx "fillStyle" "slategray")
-    (.fillText ctx "Position the mouse near a paddle to move that paddle." MID_W 370)
-    (.fillText ctx "[ Spacebar ] to pause." MID_W 410)
-    (.fillText ctx "[ Escape ] to quit." MID_W 430)
+    (.fillText ctx "Each paddle must enter the above code to play." MID_W 400)
     (.restore ctx)))
 
 (extend-type GameOverScreen
@@ -110,7 +102,7 @@
     (.fillText ctx "GAME OVER" MID_W 200)
     (aset ctx "font" "20px Helvetica")
     (aset ctx "fillStyle" "dodgerblue")
-    (.fillText ctx "Press the spacebar." MID_W 300)
+    (.fillText ctx "Restarting..." MID_W 300)
     (.restore ctx)))
 
 (extend-type Score
@@ -206,10 +198,9 @@
 (defonce state
   (atom (merge objects
                {:mode :game-start ;; game-start game-over playing
-                :pause? false
                 :socket nil
                 :session "-"
-                :current-paddle :paddle-1})))
+                :paddles #{}})))
 
 ;; Animation
 
@@ -236,8 +227,7 @@
 
 (defn collision-phase!
   [{:keys [ball paddle-1 paddle-2] :as state}]
-  (if (or (hit? paddle-1 ball)
-          (hit? paddle-2 ball))
+  (if (or (hit? paddle-1 ball) (hit? paddle-2 ball))
     (let [{:keys [vx vy]} ball
           delta (rand-nth [0.3 0.5 0.7])
           vxf (if (< vx 0) dec inc)
@@ -246,7 +236,7 @@
     state))
 
 (defn score-phase!
-  [{:keys [ball score-1 score-2] :as state}]
+  [event-ch {:keys [ball score-1 score-2] :as state}]
   (if (<= 0 (:x ball) SCALE-W)
     state
     (let [{:keys [x vx radius]} ball
@@ -264,15 +254,19 @@
           ball (if p2?
                  (assoc ball :x (- SCALE-W 25) :y (/ SCALE-H 2) :vy -2 :vx -3)
                  (assoc ball :x 25 :y (/ SCALE-H 2) :vy 2 :vx 3))]
+      (when (= mode :game-over)
+        (go (<! (timeout 5000))
+            (put! event-ch {:event :client/restart-game})))
       (assoc state :score-1 s1 :score-2 s2 :ball ball :mode mode))))
 
 (defn animate-loop!
-  [state ctx]
-  (when-not (:pause? @state)
-    (when (= (:mode @state) :playing)
-      (swap! state #(-> % move-phase! collision-phase! score-phase!)))
-    (draw-phase! state ctx))
-  (.requestAnimationFrame js/window (partial animate-loop! state ctx)))
+  [state event-ch ctx]
+  (let [scorer! (partial score-phase! event-ch)]
+    ((fn again []
+       (when (= (:mode @state) :playing)
+         (swap! state #(-> % move-phase! collision-phase! scorer!)))
+       (draw-phase! state ctx)
+       (.requestAnimationFrame js/window again)))))
 
 ;;-----------------------------------------------------------------------------
 ;; Control
@@ -288,45 +282,12 @@
     (.scale ctx (/ w SCALE-W) (/ h SCALE-H))
     (draw-phase! state ctx)))
 
-(defn- pause-or-abort!
-  [state]
-  (swap! state #(if (:pause? %)
-                  (assoc % :pause? false)
-                  (assoc % :mode :game-start))))
-
-(defn- pause-or-next!
-  [state]
-  (swap! state #(case (:mode %)
-                  :game-start (merge % objects {:mode :playing})
-                  :game-over (assoc % :mode :game-start)
-                  (assoc % :pause? (not (:pause? %))))))
-
-(defn- paddle-move!
-  [state e]
-  (when (= (:mode @state) :playing)
-    (let [t (.-target e)
-          w (- (.-innerWidth js/window) 40)
-          h (- (int (/ (* w 9) 16)) 40)
-          sh (/ h SCALE-H)
-          y (int (/ (- (.-clientY e) (.-offsetTop t)) sh))
-          x (.-clientX e)
-          ww (/ (.-innerWidth js/window) 2)
-          paddle (if (>= x ww) :paddle-2 :paddle-1)
-          object (get @state paddle)]
-      (swap! state assoc paddle (position! object y)))))
-
-(def key-stroke-stream
-  (comp (map #(or (get KEYBOARD %) :keyboard/unknown))
-        (filter #(not= % :keyboard/unknown))
-        (map #(assoc {} :event %))))
-
 ;;-----------------------------------------------------------------------------
 ;; Events
 ;;-----------------------------------------------------------------------------
 
 (defmulti handle!
   (fn [state event-ch msg]
-    (println "msg:" msg)
     (:event msg)))
 
 (defmethod handle! :default
@@ -347,26 +308,45 @@
         object (get @state id)]
     (swap! state assoc id (position! object y))))
 
-(defmethod handle! :keyboard/abort
+;; server
+(defmethod handle! :join
   [state event-ch msg]
-  (pause-or-abort! state))
+  (when-not (= (:id msg) :game)
+    (swap! state #(update-in % [:paddles] (fn [p] (conj p (:id msg)))))
+    (if (= #{:paddle-1 :paddle-2} (:paddles @state))
+      (swap! state assoc :mode :playing))))
 
-(defmethod handle! :keyboard/space
+;; server
+(defmethod handle! :disconnect
   [state event-ch msg]
-  (pause-or-next! state))
+  (swap! state (fn [s]
+                 (-> (update-in s [:paddles] #(disj % (:id msg)))
+                     (assoc :mode :game-start)))))
 
 (defmethod handle! :socket/open
   [state event-ch msg]
   (sk/send! (:ws @state) {:event :session :id :game}))
 
+(defmethod handle! :client/restart-game
+  [state event-ch msg]
+  (swap! state (fn [s] (-> (merge s objects)
+                          (assoc :mode :game-start)
+                          (assoc :paddles #{}))))
+  (sk/send! (:ws @state)
+            {:event :gameover :session (:session @state) :id :game}))
+
+(defmethod handle! :client/err
+  [state event-ch msg]
+  (println "ERROR:" (pr-str msg)))
+
 (defn- event-loop!
-  [state key-ch event-ch]
+  [state event-ch]
   (go-loop []
-    (when-let [[msg _] (alts! [key-ch event-ch])]
+    (when-let [msg (<! event-ch)]
       (try
         (handle! state event-ch msg)
         (catch js/Error e
-          (handle! state event-ch {:event :err :error e :msg msg})))
+          (handle! state event-ch {:event :client/err :error e :msg msg})))
       (recur))))
 
 ;;-----------------------------------------------------------------------------
@@ -376,23 +356,17 @@
 (defn- main
   []
   (println "Welcome to Pong Single Player")
-  (let [canvas (dom/by-id "canvas")
-        ctx (.getContext canvas "2d")
-        key-ch (chan 1 key-stroke-stream)
+  (let [ctx (.getContext (dom/by-id "canvas") "2d")
         event-ch (chan)
         socket (sk/socket! event-ch)]
     (swap! state assoc :ws socket)
-    (event-loop! state key-ch event-ch)
+    (event-loop! state event-ch)
 
     (sk/open! socket)
     (dom/listen! js/window "resize" #(resize! state ctx))
-    (dom/listen! js/document "keydown" #(put! key-ch (.-keyCode %)))
-    (dom/listen! canvas "mousemove" #(paddle-move! state %))
     (resize! state ctx)
-    (animate-loop! state ctx)))
+    (animate-loop! state event-ch ctx)))
 
 (defn ^:export startGame
   []
   (main))
-
-;;(set! (.-onload js/window) main)

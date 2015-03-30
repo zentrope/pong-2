@@ -109,6 +109,11 @@
   (swap! state assoc :mode :prejoin)
   (view-mode @state))
 
+(defmethod handle! :gameover
+  [state msg]
+  (swap! state assoc :mode :prejoin)
+  (view-mode @state))
+
 (defmethod handle! :client/session
   [state msg]
   (println :new-session)
