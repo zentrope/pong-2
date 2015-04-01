@@ -7,15 +7,18 @@
   {:name "EPL" :url "http://bit.ly/1EXoLjp"}
 
   :dependencies
-  [[org.clojure/clojure "1.7.0-alpha5"]
+  [[org.clojure/clojure "1.7.0-alpha6"]
    [org.clojure/core.async "0.1.346.0-17112a-alpha"]
    [aleph "0.4.0-beta3"]
    [clout "2.1.0"]
-   [org.clojure/data.priority-map "0.0.6"]]
+   ;;
+   ;; Overrides
+   [org.clojure/data.priority-map "0.0.7"]
+   [instaparse "1.3.6"]]
 
   :source-paths ["src/clj" "src/cljs"]
 
-  :main ^:skip-aot pong.main
+  :main ^:skip-aot pong.server
 
   :clean-targets
   ^{:protect false}
@@ -25,9 +28,7 @@
 
   :global-vars {*warn-on-reflection* false}
 
-  :aliases {"game" ["run" "-m" "pong.sim.game"]
-            "player1" ["run" "-m" "pong.sim.controller" "player1"]
-            "player2" ["run" "-m" "pong.sim.controller" "player2"]}
+  :aliases {"server" ["trampoline" "run"]}
 
   :cljsbuild
   {:builds [{:id "dev"
@@ -49,7 +50,7 @@
              :dev
              {:dependencies
               [[org.clojure/tools.nrepl "0.2.10"] ;; override lein
-               [org.clojure/clojurescript "0.0-3165"]]
+               [org.clojure/clojurescript "0.0-3169"]]
               :plugins
               [[lein-ancient "0.6.5"]
                [lein-cljsbuild "1.0.5"]

@@ -1,4 +1,4 @@
-(ns pong.main
+(ns pong.server
   (:require
    [aleph.http :as http]
    [clojure.core.async :refer [go]]
@@ -33,12 +33,6 @@
 
 (defonce state
   (atom {}))
-
-;; debug only
-#_(add-watch state :debug
-             (fn [_ _ _ new]
-               (pprint {:state (reduce (fn [a [k v]]
-                                         (assoc a (str k) v)) {} new)})))
 
 ;;-----------------------------------------------------------------------------
 
@@ -82,11 +76,6 @@
 (defmethod dispatch-event! :default
   [state stream event]
   (publish! state stream event))
-
-(defmethod dispatch-event! :join
-  [state stream event]
-  (publish! state stream event)
-  (println "- chat" (pr-str event)))
 
 (defmethod dispatch-event! :session
   [state stream event]
