@@ -10,11 +10,10 @@
   [[org.clojure/clojure "1.7.0-alpha6"]
    [org.clojure/core.async "0.1.346.0-17112a-alpha"]
    [aleph "0.4.0-beta3"]
-   [clout "2.1.0"]
+   [clout "2.1.1"]
    ;;
-   ;; Overrides
-   [org.clojure/data.priority-map "0.0.7"]
-   [instaparse "1.3.6"]]
+   ;; Overrides to avoid reflection warnings by core.async.
+   [org.clojure/data.priority-map "0.0.7"]]
 
   :source-paths ["src/clj" "src/cljs"]
 
@@ -26,9 +25,11 @@
    "resources/www/main.js"
    :target-path]
 
-  :global-vars {*warn-on-reflection* false}
+  :global-vars
+  {*warn-on-reflection* false}
 
-  :aliases {"server" ["trampoline" "run"]}
+  :aliases
+  {"server" ["trampoline" "run"]}
 
   :cljsbuild
   {:builds [{:id "dev"
@@ -44,14 +45,15 @@
                         :pretty-print true
                         :optimizations :whitespace}}]}
 
-  :profiles {:uberjar
-             {:aot :all}
+  :profiles
+  {:uberjar
+   {:aot :all}
 
-             :dev
-             {:dependencies
-              [[org.clojure/tools.nrepl "0.2.10"] ;; override lein
-               [org.clojure/clojurescript "0.0-3169"]]
-              :plugins
-              [[lein-ancient "0.6.5"]
-               [lein-cljsbuild "1.0.5"]
-               [cider/cider-nrepl "0.9.0-SNAPSHOT"]]}})
+   :dev
+   {:dependencies
+    [[org.clojure/tools.nrepl "0.2.10"] ;; override lein
+     [org.clojure/clojurescript "0.0-3169"]]
+    :plugins
+    [[lein-ancient "0.6.5"]
+     [lein-cljsbuild "1.0.5"]
+     [cider/cider-nrepl "0.9.0-SNAPSHOT"]]}})
